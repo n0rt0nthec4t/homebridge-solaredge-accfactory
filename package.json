@@ -1,0 +1,58 @@
+{
+    "name": "homebridge-solaredge-accfactory",
+    "displayName": "SolarEdge Accfactory",
+    "type": "module",
+    "version": "0.0.1-alpha.1",
+    "description": "Homebridge support for SolarEdge Invertor(s)",
+    "author": "n0rt0nthec4t",
+    "license": "Apache-2.0",
+    "homepage": "https://github.com/n0rt0nthec4t/homebridge-solaredge-accfactory/#readme",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/n0rt0nthec4t/homebridge-solaredge-accfactory.git"
+    },
+    "bugs": {
+        "url": "https://github.com/n0rt0nthec4t/homebridge-solaredge-accfactory/issues"
+    },
+    "keywords": [
+        "homekit",
+        "homebridge-plugin",
+        "homebridge",
+        "solaredge",
+        "energy",
+        "solar"
+    ],
+    "main": "dist/index.js",
+    "engines": {
+        "node": "^20.17.0 || ^22.9.0",
+        "homebridge": "^1.8.0 || ^2.0.0-beta.0"
+    },
+    "files": [
+        "LICENSE",
+        "dist/**/*",
+        "config.schema.json",
+        "README.md",
+        "CHANGELOG.md"
+    ],
+    "scripts": {
+        "clean": "rimraf ./dist*",
+        "format": "prettier --write src/*.js src/**/*.js",
+        "lint": "eslint src/*.js src/**/*.js --max-warnings=20",
+        "build": "npm run clean && copyfiles -u 1 src/*.js dist && copyfiles -u 2 src/HomeKitDevice/*.js dist && copyfiles -u 2 src/HomeKitHistory/*.js dist",
+        "prepublishOnly": "npm run lint && npm run build"
+    },
+    "devDependencies": {
+        "@eslint/js": "^9.12.0",
+        "@stylistic/eslint-plugin": "^2.9.0",
+        "@types/node": "^22.7.5",
+        "@typescript-eslint/parser": "^8.8.1",
+        "homebridge": "^2.0.0-beta.0",
+        "copyfiles": "^2.4.1",
+        "eslint": "^9.12.0",
+        "prettier": "^3.3.3",
+        "prettier-eslint": "^16.3.0",
+        "rimraf": "^6.0.1"
+    },
+    "dependencies": {
+    }
+}
