@@ -416,6 +416,7 @@ class SolarEdgeAccfactory {
         }
         tempDevice.peakPower = data.site.peakPower * unitMultplier;
         tempDevice.powerflow = data.powerflow;
+        tempDevice.online = true;   // Can we work this out???
 
         tempDevice.eveHistory =
           this.config.options.eveHistory === true || this.config?.devices?.[tempDevice.serialNumber]?.eveHistory === true;
