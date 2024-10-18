@@ -4,6 +4,7 @@ All notable changes to `homebridge-solaredge-accfactory` will be documented in t
 
 ## Known issues
 
+- API Key is stored in plain text in configuration JSON
 - Currently uses v1 of the SolarEdge monitoring API
 - Only SolarEdge configured inverters are added (Need todo batteries)
 

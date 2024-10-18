@@ -2,7 +2,7 @@
     "name": "homebridge-solaredge-accfactory",
     "displayName": "SolarEdge Accfactory",
     "type": "module",
-    "version": "0.0.1-alpha.3",
+    "version": "0.0.1-alpha.5",
     "description": "Homebridge support for SolarEdge Invertor(s)",
     "author": "n0rt0nthec4t",
     "license": "Apache-2.0",
@@ -14,6 +14,7 @@
     "bugs": {
         "url": "https://github.com/n0rt0nthec4t/homebridge-solaredge-accfactory/issues"
     },
+    "funding": "https://github.com/n0rt0nthec4t/homebridge-solaredge-accfactory?sponsor=1",
     "keywords": [
         "homekit",
         "homebridge-plugin",
