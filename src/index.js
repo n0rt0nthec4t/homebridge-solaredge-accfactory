@@ -13,7 +13,7 @@
 //  Battery Charging No = Generating solar only, not exprting to grid
 //  Low battery indicator = Importing from grid
 //
-// Code version 18/10/2024
+// Code version 20/10/2024
 // Mark Hulskamp
 'use strict';
 
@@ -209,26 +209,24 @@ class SolarEdgeAccfactory {
 
     this.config.options.eveHistory = typeof this.config.options?.eveHistory === 'boolean' ? this.config.options.eveHistory : true;
 
-    if (this.api instanceof EventEmitter === true) {
-      this.api.on('didFinishLaunching', async () => {
-        // We got notified that Homebridge has finished loading, so we are ready to process
-        this.discoverDevices();
+    this.api.on('didFinishLaunching', async () => {
+      // We got notified that Homebridge has finished loading, so we are ready to process
+      this.discoverDevices();
 
-        // We'll check connection status every 15 seconds. We'll also handle token expiry/refresh this way
-        clearInterval(this.#connectionTimer);
-        this.#connectionTimer = setInterval(this.discoverDevices.bind(this), 15000);
-      });
+      // We'll check connection status every 15 seconds
+      clearInterval(this.#connectionTimer);
+      this.#connectionTimer = setInterval(this.discoverDevices.bind(this), 15000);
+    });
 
-      this.api.on('shutdown', async () => {
-        // We got notified that Homebridge is shutting down
-        // Perform cleanup some internal cleaning up
-        clearInterval(this.#connectionTimer);
-        this.#eventEmitter.removeAllListeners();
-        this.#rawData = {};
-        this.#eventEmitter = undefined;
-        this.#connectionTimer = undefined;
-      });
-    }
+    this.api.on('shutdown', async () => {
+      // We got notified that Homebridge is shutting down
+      // Perform cleanup some internal cleaning up
+      clearInterval(this.#connectionTimer);
+      this.#eventEmitter.removeAllListeners();
+      this.#rawData = {};
+      this.#eventEmitter = undefined;
+      this.#connectionTimer = undefined;
+    });
   }
 
   configureAccessory(accessory) {
