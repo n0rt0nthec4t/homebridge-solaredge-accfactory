@@ -13,7 +13,7 @@
 //  Battery Charging No = Generating solar only, not exprting to grid
 //  Low battery indicator = Importing from grid
 //
-// Code version 20/10/2024
+// Code version 11/11/2024
 // Mark Hulskamp
 'use strict';
 
@@ -336,6 +336,10 @@ class SolarEdgeAccfactory {
             }
           });
         }
+      })
+      // eslint-disable-next-line no-unused-vars
+      .catch((error) => {
+        // Empty
       });
 
     // redo data gathering again after specified timeout
@@ -414,7 +418,7 @@ class SolarEdgeAccfactory {
         }
         tempDevice.peakPower = data.site.peakPower * unitMultplier;
         tempDevice.powerflow = data.powerflow;
-        tempDevice.online = true;   // Can we work this out???
+        tempDevice.online = true; // Can we work this out???
 
         tempDevice.eveHistory =
           this.config.options.eveHistory === true || this.config?.devices?.[tempDevice.serialNumber]?.eveHistory === true;
