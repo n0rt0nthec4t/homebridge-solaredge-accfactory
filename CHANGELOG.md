@@ -8,6 +8,12 @@ All notable changes to `homebridge-solaredge-accfactory` will be documented in t
 - Currently uses v1 of the SolarEdge monitoring API
 - Only SolarEdge configured inverters are added (Need todo batteries)
 
+## v0.0.2 (2025/06/14)
+
+- Internal code cleanup and structural improvements
+- Improved logging, error handling, and API handling
+- Moved solar generation value to a dedicated LightSensor service
+
 ## v0.0.1 (alpha)
 
 - Initial version from my internal home project, SolarEdge_accfactory

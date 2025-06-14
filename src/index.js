@@ -13,13 +13,12 @@
 //  Battery Charging No = Generating solar only, not exprting to grid
 //  Low battery indicator = Importing from grid
 //
-// Code version 11/11/2024
 // Mark Hulskamp
 'use strict';
 
 // Define nodejs module requirements
 import EventEmitter from 'node:events';
-import { setInterval, clearInterval, setTimeout } from 'node:timers';
+import { clearInterval, setTimeout } from 'node:timers';
 import crypto from 'node:crypto';
 
 // Import our modules
@@ -32,39 +31,35 @@ HomeKitDevice.HISTORY = HomeKitHistory;
 
 // Solar Inverter class
 class SolarInverter extends HomeKitDevice {
+  static TYPE = 'SolarInverter';
+  static VERSION = '2025.06.14';
+
   batteryService = undefined;
   outletService = undefined;
+  lightService = undefined;
 
   constructor(accessory, api, log, eventEmitter, deviceData) {
     super(accessory, api, log, eventEmitter, deviceData);
   }
 
   // Class functions
-  addServices() {
+  setupDevice() {
     // Setup the outlet service if not already present on the accessory
-    this.outletService = this.accessory.getService(this.hap.Service.Outlet);
-    if (this.outletService === undefined) {
-      this.outletService = this.accessory.addService(this.hap.Service.Outlet, '', 1);
-    }
-    if (this.outletService.testCharacteristic(this.hap.Characteristic.StatusFault) === false) {
-      this.outletService.addCharacteristic(this.hap.Characteristic.StatusFault);
-    }
-    if (this.outletService.testCharacteristic(this.hap.Characteristic.CurrentAmbientLightLevel) === false) {
-      this.outletService.addCharacteristic(this.hap.Characteristic.CurrentAmbientLightLevel);
-    }
+    this.outletService = this.addHKService(this.hap.Service.Outlet, '', 1);
     this.outletService.setPrimaryService();
 
-    // Setup the battery service if not already present on the accessory
-    this.batteryService = this.accessory.getService(this.hap.Service.Battery);
-    if (this.batteryService === undefined) {
-      this.batteryService = this.accessory.addService(this.hap.Service.Battery, '', 1);
-    }
+    // Setup battery service if not already present on the accessory
+    this.batteryService = this.addHKService(this.hap.Service.Battery, '', 1);
     this.batteryService.setHiddenService(true);
-
-    // Below doesnt appear to change anything in HomeKit, but we'll do it anyway. maybe for future
-    this.outletService.getCharacteristic(this.hap.Characteristic.CurrentAmbientLightLevel).displayName = 'Solar Generation';
     this.batteryService.getCharacteristic(this.hap.Characteristic.BatteryLevel).displayName = 'Solar Generation';
     this.batteryService.getCharacteristic(this.hap.Characteristic.ChargingState).displayName = 'Exporting';
+
+    // Setup LightSensor service for solar generation LUX
+    this.lightService = this.addHKService(this.hap.Service.LightSensor, '', 1);
+    this.lightService.setHiddenService(true);
+
+    this.addHKCharacteristic(this.lightService, this.hap.Characteristic.CurrentAmbientLightLevel);
+    this.lightService.getCharacteristic(this.hap.Characteristic.CurrentAmbientLightLevel).displayName = 'Solar Generation';
 
     // Setup linkage to EveHome app if configured todo so
     if (
@@ -79,16 +74,10 @@ class SolarInverter extends HomeKitDevice {
     }
   }
 
-  updateServices(deviceData) {
+  updateDevice(deviceData) {
     if (typeof deviceData !== 'object' || this.outletService === undefined || this.batteryService === undefined) {
       return;
     }
-
-    // If device isn't online report in HomeKit
-    this.outletService.updateCharacteristic(
-      this.hap.Characteristic.StatusFault,
-      deviceData.online === true ? this.hap.Characteristic.StatusFault.NO_FAULT : this.hap.Characteristic.StatusFault.GENERAL_FAULT,
-    );
 
     // Update energy flows
     this.outletService.updateCharacteristic(
@@ -129,7 +118,7 @@ class SolarInverter extends HomeKitDevice {
       });
 
     // Solar generation in watts as a LUX reading
-    this.outletService.updateCharacteristic(
+    this.lightService.updateCharacteristic(
       this.hap.Characteristic.CurrentAmbientLightLevel,
       deviceData.powerflow.PV.currentPower < 0.0001 ? 0.0001 : deviceData.powerflow.PV.currentPower,
     );
@@ -186,7 +175,6 @@ class SolarEdgeAccfactory {
   #connections = {}; // Object of confirmed connections
   #rawData = {}; // Cached copy of data from Rest API
   #eventEmitter = new EventEmitter(); // Used for object messaging from this platform
-  #connectionTimer = undefined;
   #trackedDevices = {}; // Object of devices we've created. used to track comms uuid. key'd by serial #
 
   constructor(log, config, api) {
@@ -196,162 +184,174 @@ class SolarEdgeAccfactory {
 
     // Perform validation on the configuration passed into us and set defaults if not present
     if (config?.solaredge?.apiKey === undefined || config.solaredge.apiKey === '') {
-      this?.log?.error && this.log.error('Required SolarEdge API Key is missing from JSON configuration. Please review');
+      this?.log?.error?.('Required SolarEdge API Key is missing from JSON configuration. Please review');
       return;
     }
 
     // Valid connection object
     this.#connections[crypto.randomUUID()] = {
       authorised: false,
-      retry: true,
       apiKey: config.solaredge.apiKey,
     };
 
     this.config.options.eveHistory = typeof this.config.options?.eveHistory === 'boolean' ? this.config.options.eveHistory : true;
 
-    this.api.on('didFinishLaunching', async () => {
+    this?.api?.on?.('didFinishLaunching', async () => {
       // We got notified that Homebridge has finished loading, so we are ready to process
-      this.discoverDevices();
+      // Start reconnect loop per connection with backoff for failed tries
+      for (const uuid of Object.keys(this.#connections)) {
+        let reconnectDelay = 15000;
 
-      // We'll check connection status every 15 seconds
-      clearInterval(this.#connectionTimer);
-      this.#connectionTimer = setInterval(this.discoverDevices.bind(this), 15000);
+        const reconnectLoop = async () => {
+          if (this.#connections?.[uuid]?.authorised === false) {
+            try {
+              await this.#connect(uuid);
+              this.#subscribeREST(uuid);
+              // eslint-disable-next-line no-unused-vars
+            } catch (error) {
+              // Empty
+            }
+
+            reconnectDelay = this.#connections?.[uuid]?.authorised === true ? 15000 : Math.min(reconnectDelay * 2, 60000);
+          } else {
+            reconnectDelay = 15000;
+          }
+
+          setTimeout(reconnectLoop, reconnectDelay);
+        };
+
+        reconnectLoop();
+      }
     });
 
-    this.api.on('shutdown', async () => {
+    this?.api?.on?.('shutdown', async () => {
       // We got notified that Homebridge is shutting down
-      // Perform cleanup some internal cleaning up
-      clearInterval(this.#connectionTimer);
-      this.#eventEmitter.removeAllListeners();
+      // Perform cleanup of internal state
+      this.#eventEmitter?.removeAllListeners();
+
+      Object.values(this.#trackedDevices).forEach((device) => {
+        Object.values(device?.timers || {}).forEach((timer) => clearInterval(timer));
+      });
+
+      this.#trackedDevices = {};
       this.#rawData = {};
       this.#eventEmitter = undefined;
-      this.#connectionTimer = undefined;
     });
   }
 
   configureAccessory(accessory) {
     // This gets called from HomeBridge each time it restores an accessory from its cache
-    this?.log?.info && this.log.info('Loading accessory from cache:', accessory.displayName);
+    this?.log?.info?.('Loading accessory from cache:', accessory.displayName);
 
     // add the restored accessory to the accessories cache, so we can track if it has already been registered
     this.cachedAccessories.push(accessory);
   }
 
-  async discoverDevices() {
-    Object.keys(this.#connections).forEach((uuid) => {
-      if (this.#connections[uuid]?.authorised === false && this.#connections[uuid]?.retry === true) {
-        this.#connect(uuid).then(() => {
-          if (this.#connections[uuid].authorised === true) {
-            this.#subscribeREST(uuid);
-          }
-        });
+  async #connect(uuid) {
+    if (typeof this.#connections?.[uuid] === 'object') {
+      this?.log?.info?.('Performing authorisation to SolarEdge Monitoring API');
+
+      try {
+        let response = await fetchWrapper(
+          'get',
+          'https://monitoringapi.solaredge.com/sites/list?sortProperty=name&sortOrder=ASC&api_key=' + this.#connections[uuid].apiKey,
+          {},
+        );
+        await response.json();
+
+        this.#connections[uuid].authorised = true;
+
+        this?.log?.success?.('Successfully authorised to SolarEdge Monitoring API');
+      } catch (error) {
+        this.#connections[uuid].authorised = false;
+
+        this?.log?.error?.(
+          'Authorisation failed to SolarEdge Monitoring API. A periodic retry event will be triggered',
+          String(error?.cause),
+        );
       }
-    });
-  }
-
-  async #connect(connectionUUID) {
-    if (typeof this.#connections?.[connectionUUID] === 'object') {
-      this?.log?.info && this.log.info('Performing authorisation to SolarEdge Monitoring API');
-      await fetchWrapper(
-        'get',
-        'https://monitoringapi.solaredge.com/sites/list?sortProperty=name&sortOrder=ASC&api_key=' +
-          this.#connections[connectionUUID].apiKey,
-        {},
-      )
-        .then((response) => response.json())
-        // eslint-disable-next-line no-unused-vars
-        .then((data) => {
-          this.#connections[connectionUUID].authorised = true;
-
-          this?.log?.success && this.log.success('Successfully authorised to SolarEdge Monitoring API');
-        })
-        // eslint-disable-next-line no-unused-vars
-        .catch((error) => {
-          this.#connections[connectionUUID].authorised = false;
-
-          this?.log?.error &&
-            this.log.error(
-              'Authorisation failed to SolarEdge Monitoring API. A periodic retry event will be triggered',
-              this.#connections[connectionUUID].gateway,
-            );
-          this.#connections[connectionUUID].retry = true;
-          return;
-        });
     }
   }
 
-  async #subscribeREST(connectionUUID) {
-    if (typeof this.#connections?.[connectionUUID] !== 'object' || this.#connections?.[connectionUUID]?.authorised !== true) {
-      // Not a valid connection object and/or we're not authorised
+  async #subscribeREST(uuid) {
+    if (typeof this.#connections?.[uuid] !== 'object' || this.#connections?.[uuid]?.authorised !== true) {
       return;
     }
 
-    await fetchWrapper(
-      'get',
-      'https://monitoringapi.solaredge.com/sites/list?sortProperty=name&sortOrder=ASC&api_key=' + this.#connections[connectionUUID].apiKey,
-      {},
-    )
-      .then((response) => response.json())
-      .then(async (data) => {
-        if (Array.isArray(data?.sites?.site) === true) {
-          const FETCHURLS = ['/inventory.json', '/currentPowerFlow.json'];
-          data.sites.site.forEach(async (site) => {
-            let tempObject = [];
-            await Promise.all(
-              FETCHURLS.map(async (url) => {
-                await fetchWrapper(
+    try {
+      let response = await fetchWrapper(
+        'get',
+        'https://monitoringapi.solaredge.com/sites/list?sortProperty=name&sortOrder=ASC&api_key=' + this.#connections[uuid].apiKey,
+        {},
+      );
+      let data = await response.json();
+
+      if (Array.isArray(data?.sites?.site) === true) {
+        const FETCHURLS = ['/inventory.json', '/currentPowerFlow.json'];
+
+        for (const site of data.sites.site) {
+          let tempObject = {};
+
+          await Promise.all(
+            FETCHURLS.map(async (url) => {
+              try {
+                let response = await fetchWrapper(
                   'get',
-                  'https://monitoringapi.solaredge.com/site/' + site.id + url + '?api_key=' + this.#connections[connectionUUID].apiKey,
+                  'https://monitoringapi.solaredge.com/site/' + site.id + url + '?api_key=' + this.#connections[uuid].apiKey,
                   {
                     timeout: 30000,
                   },
-                )
-                  .then((response) => response.json())
-                  .then((data) => {
-                    tempObject[url] = data;
-                  })
-                  .catch((error) => {
-                    if (
-                      error?.cause !== undefined &&
-                      JSON.stringify(error.cause).toUpperCase().includes('TIMEOUT') === false &&
-                      this?.log?.debug
-                    ) {
-                      this.log.debug('REST API had an error obtaining data from url "%s" for uuid "%s"', url, connectionUUID);
-                      this.log.debug('Error was "%s"', error);
-                    }
-                  });
-              }),
-            );
+                );
+                tempObject[url] = await response.json();
+              } catch (error) {
+                if (String(error?.cause).toUpperCase().includes('TIMEOUT') === false && this?.log?.debug) {
+                  this.log.debug('REST API had an error obtaining data from url "%s" for uuid "%s"', url, uuid);
+                  this.log.debug('Error was "%s"', String(error?.cause));
+                }
+              }
+            }),
+          );
 
-            if (Object.keys(tempObject).length === FETCHURLS.length) {
-              // We got all the data required, so now can process what we retrieved
-              this.#rawData[site.id] = {
-                connection: connectionUUID,
-                site: site,
-                inventory: tempObject['/inventory.json'].Inventory,
-                powerflow: tempObject['/currentPowerFlow.json'].siteCurrentPowerFlow,
-              };
+          if (Object.keys(tempObject).length === FETCHURLS.length) {
+            this.#rawData[site.id] = {
+              connection: uuid,
+              site: site,
+              inventory: tempObject['/inventory.json'].Inventory,
+              powerflow: tempObject['/currentPowerFlow.json'].siteCurrentPowerFlow,
+            };
 
-              await this.#processPostSubscribe();
-            }
-          });
+            await this.#processPostSubscribe();
+          }
         }
-      })
-      // eslint-disable-next-line no-unused-vars
-      .catch((error) => {
-        // Empty
-      });
+      }
+    } catch {
+      // Suppress site list fetch errors
+    }
 
-    // redo data gathering again after specified timeout
-    setTimeout(this.#subscribeREST.bind(this, connectionUUID), SUBSCRIBEINTERVAL);
+    setTimeout(() => this.#subscribeREST(uuid), SUBSCRIBEINTERVAL);
   }
 
   #processPostSubscribe() {
     Object.values(this.#processData('')).forEach((deviceData) => {
       if (this.#trackedDevices?.[deviceData?.serialNumber] === undefined && deviceData?.excluded === true) {
         // We haven't tracked this device before (ie: should be a new one) and but its excluded
-        this?.log?.warn && this.log.warn('Device "%s" is ignored due to it being marked as excluded', deviceData.description);
+        this?.log?.warn?.('Device "%s" is ignored due to it being marked as excluded', deviceData.description);
+
+        // Track this device even though its excluded
+        this.#trackedDevices[deviceData.serialNumber] = {
+          uuid: HomeKitDevice.generateUUID(HomeKitDevice.PLUGIN_NAME, this.api, deviceData.serialNumber),
+          timers: undefined,
+          exclude: true,
+        };
+
+        // If the device is now marked as excluded and present in accessory cache
+        // Then we'll unregister it from the Homebridge platform
+        let accessory = this.cachedAccessories.find((accessory) => accessory?.UUID === this.#trackedDevices[deviceData.serialNumber].uuid);
+        if (accessory !== undefined && typeof accessory === 'object') {
+          this.api.unregisterPlatformAccessories(HomeKitDevice.PLUGIN_NAME, HomeKitDevice.PLATFORM_NAME, [accessory]);
+        }
       }
+
       if (this.#trackedDevices?.[deviceData?.serialNumber] === undefined && deviceData?.excluded === false) {
         // SolarEdge Inverter - Categories.OUTLET = 7
         let tempDevice = new SolarInverter(this.cachedAccessories, this.api, this.log, this.#eventEmitter, deviceData);
@@ -360,12 +360,15 @@ class SolarEdgeAccfactory {
         // Track this device once created
         this.#trackedDevices[deviceData.serialNumber] = {
           uuid: tempDevice.uuid,
+          timers: undefined,
+          exclude: false,
         };
       }
 
       // Finally, if device is not excluded, send updated data to device for it to process
       if (deviceData.excluded === false && this.#trackedDevices?.[deviceData?.serialNumber] !== undefined) {
-        this.#eventEmitter.emit(this.#trackedDevices[deviceData.serialNumber].uuid, HomeKitDevice.UPDATE, deviceData);
+        this.#trackedDevices?.[deviceData?.serialNumber]?.uuid &&
+          this.#eventEmitter?.emit?.(this.#trackedDevices[deviceData.serialNumber].uuid, HomeKitDevice.UPDATE, deviceData);
       }
     });
   }
@@ -374,57 +377,56 @@ class SolarEdgeAccfactory {
     if (typeof deviceUUID !== 'string') {
       deviceUUID = '';
     }
+
     let devices = {};
 
     Object.values(this.#rawData).forEach((data) => {
-      // process raw device data
-      Object.values(data.inventory.inverters).forEach((inverter) => {
-        var tempDevice = {};
-        tempDevice.excluded = false;
-        tempDevice.serialNumber = inverter.SN.toUpperCase();
-        tempDevice.softwareVersion = inverter.cpuVersion.replace(/-/g, '.');
-        tempDevice.model = inverter.model;
-        tempDevice.manufacturer = inverter.manufacturer;
-        tempDevice.siteid = data.site.id;
-        tempDevice.installationDate = data.site.installationDate;
+      // eslint-disable-next-line no-undef
+      let powerflow = structuredClone(data.powerflow);
+      let unitMultiplier = 1000;
 
-        let description = inverter.name;
-        let location = typeof data?.site?.location?.city === 'string' ? data.site.location.city : '';
-        if (description === '') {
-          description = location;
-          location = '';
+      if (typeof powerflow?.unit === 'string') {
+        let unit = powerflow.unit.toUpperCase();
+        if (unit === 'MW') {
+          unitMultiplier = 1000000;
+        } else if (unit === 'W') {
+          unitMultiplier = 1;
         }
-        tempDevice.description = makeHomeKitName(location === '' ? description : description + ' - ' + location);
+      }
 
-        // Fix up power values
-        var unitMultplier = 1000; // Default is kW or 1000W
-        if (data.powerflow.unit.toUpperCase() === 'KW') {
-          unitMultplier = 1000;
-        } // kW
-        if (data.powerflow.unit.toUpperCase() === 'MW') {
-          unitMultplier = 1000000;
-        } // mW
-        if (data.powerflow.unit.toUpperCase() === 'W') {
-          unitMultplier = 1;
-        } // W
-        if (data.powerflow.GRID.hasOwnProperty('currentPower') === true) {
-          data.powerflow.GRID.currentPower = data.powerflow.GRID.currentPower * unitMultplier;
+      ['GRID', 'PV', 'LOAD'].forEach((key) => {
+        if (powerflow?.[key]?.currentPower !== undefined) {
+          powerflow[key].currentPower *= unitMultiplier;
         }
-        if (data.powerflow.PV.hasOwnProperty('currentPower') === true) {
-          data.powerflow.PV.currentPower = data.powerflow.PV.currentPower * unitMultplier;
-        }
-        if (data.powerflow.LOAD.hasOwnProperty('currentPower') === true) {
-          data.powerflow.LOAD.currentPower = data.powerflow.LOAD.currentPower * unitMultplier;
-        }
-        tempDevice.peakPower = data.site.peakPower * unitMultplier;
-        tempDevice.powerflow = data.powerflow;
-        tempDevice.online = true; // Can we work this out???
-
-        tempDevice.eveHistory =
-          this.config.options.eveHistory === true || this.config?.devices?.[tempDevice.serialNumber]?.eveHistory === true;
-
-        devices[tempDevice.serialNumber] = tempDevice; // Store processed device
       });
+
+      Array.isArray(data?.inventory?.inverters) === true &&
+        data.inventory.inverters.forEach((inverter) => {
+          let serial = inverter.SN.toUpperCase();
+          let location = typeof data?.site?.location?.city === 'string' ? data.site.location.city : '';
+          let description = inverter.name;
+          if (description === '') {
+            description = location;
+          }
+
+          let name = makeHomeKitName(location === '' ? description : description + ' - ' + location);
+
+          let tempDevice = {};
+          tempDevice.excluded = false;
+          tempDevice.serialNumber = serial;
+          tempDevice.softwareVersion = inverter.cpuVersion.replace(/-/g, '.');
+          tempDevice.model = inverter.model;
+          tempDevice.manufacturer = inverter.manufacturer;
+          tempDevice.siteid = data.site.id;
+          tempDevice.installationDate = data.site.installationDate;
+          tempDevice.description = name;
+          tempDevice.peakPower = data.site.peakPower * unitMultiplier;
+          tempDevice.powerflow = powerflow;
+          tempDevice.online = true;
+          tempDevice.eveHistory = this.config.options.eveHistory === true || this.config?.devices?.[serial]?.eveHistory === true;
+
+          devices[serial] = tempDevice;
+        });
     });
 
     return devices;
@@ -436,64 +438,83 @@ function makeHomeKitName(nameToMakeValid) {
   // Strip invalid characters to meet HomeKit naming requirements
   // Ensure only letters or numbers are at the beginning AND/OR end of string
   // Matches against uni-code characters
-  return typeof nameToMakeValid === 'string'
-    ? nameToMakeValid
-        .replace(/[^\p{L}\p{N}\p{Z}\u2019.,-]/gu, '')
-        .replace(/^[^\p{L}\p{N}]*/gu, '')
-        .replace(/[^\p{L}\p{N}]+$/gu, '')
-    : nameToMakeValid;
+  let validHomeKitName = nameToMakeValid;
+  if (typeof nameToMakeValid === 'string') {
+    validHomeKitName = nameToMakeValid
+      .replace(/[^\p{L}\p{N}\p{Z}\u2019 '.,-]/gu, '') // Remove disallowed characters
+      .replace(/^[^\p{L}\p{N}]*/gu, '') // Trim invalid prefix
+      .replace(/[^\p{L}\p{N}]+$/gu, ''); // Trim invalid suffix
+  }
+  return validHomeKitName;
 }
 
-function scaleValue(value, sourceRangeMin, sourceRangeMax, targetRangeMin, targetRangeMax) {
-  if (value < sourceRangeMin) {
-    value = sourceRangeMin;
+function scaleValue(value, sourceMin, sourceMax, targetMin, targetMax) {
+  if (sourceMax === sourceMin) {
+    return targetMin;
   }
-  if (value > sourceRangeMax) {
-    value = sourceRangeMax;
-  }
-  return ((value - sourceRangeMin) * (targetRangeMax - targetRangeMin)) / (sourceRangeMax - sourceRangeMin) + targetRangeMin;
+
+  value = Math.max(sourceMin, Math.min(sourceMax, value));
+
+  return ((value - sourceMin) * (targetMax - targetMin)) / (sourceMax - sourceMin) + targetMin;
 }
 
-async function fetchWrapper(method, url, options, data, response) {
+async function fetchWrapper(method, url, options, data) {
   if ((method !== 'get' && method !== 'post') || typeof url !== 'string' || url === '' || typeof options !== 'object') {
     return;
   }
 
-  if (isNaN(options?.timeout) === false && Number(options?.timeout) > 0) {
-    // If a timeout is specified in the options, setup here
+  if (isNaN(options?.timeout) === false && Number(options.timeout) > 0) {
     // eslint-disable-next-line no-undef
     options.signal = AbortSignal.timeout(Number(options.timeout));
   }
 
-  if (options?.retry === undefined) {
-    // If not retry option specifed , we'll do just once
+  if (isNaN(options.retry) === true || options.retry < 1) {
     options.retry = 1;
   }
 
-  options.method = method; // Set the HTTP method to use
+  if (isNaN(options._retryCount) === true) {
+    options._retryCount = 0;
+  }
 
-  if (method === 'post' && typeof data !== undefined) {
-    // Doing a HTTP post, so include the data in the body
+  options.method = method;
+
+  if (method === 'post' && data !== undefined) {
     options.body = data;
   }
 
-  if (options.retry > 0) {
+  let response;
+  try {
     // eslint-disable-next-line no-undef
     response = await fetch(url, options);
-    if (response.ok === false && options.retry > 1) {
-      options.retry--; // One less retry to go
+  } catch (error) {
+    if (options.retry > 1) {
+      options.retry--;
+      options._retryCount++;
 
-      // Try again after short delay (500ms)
-      // We pass back in this response also for when we reach zero retries and still not successful
-      await new Promise((resolve) => setTimeout(resolve, 500));
-      // eslint-disable-next-line no-undef
-      response = await fetchWrapper(method, url, options, data, structuredClone(response));
+      const delay = 500 * 2 ** (options._retryCount - 1);
+      await new Promise((resolve) => setTimeout(resolve, delay));
+
+      return fetchWrapper(method, url, options, data);
     }
-    if (response.ok === false && options.retry === 0) {
-      let error = new Error(response.statusText);
-      error.code = response.status;
-      throw error;
+
+    error.message = `Fetch failed for ${method.toUpperCase()} ${url} after ${options._retryCount + 1} attempt(s): ${error.message}`;
+    throw error;
+  }
+
+  if (response?.ok === false) {
+    if (options.retry > 1) {
+      options.retry--;
+      options._retryCount++;
+
+      let delay = 500 * 2 ** (options._retryCount - 1);
+      await new Promise((resolve) => setTimeout(resolve, delay));
+
+      return fetchWrapper(method, url, options, data);
     }
+
+    let error = new Error(`HTTP ${response.status} on ${method.toUpperCase()} ${url}: ${response.statusText || 'Unknown error'}`);
+    error.code = response.status;
+    throw error;
   }
 
   return response;
