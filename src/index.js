@@ -32,7 +32,7 @@ HomeKitDevice.HISTORY = HomeKitHistory;
 // Solar Inverter class
 class SolarInverter extends HomeKitDevice {
   static TYPE = 'SolarInverter';
-  static VERSION = '2025.06.14';
+  static VERSION = '2025.06.15';
 
   batteryService = undefined;
   outletService = undefined;
@@ -409,23 +409,20 @@ class SolarEdgeAccfactory {
             description = location;
           }
 
-          let name = makeHomeKitName(location === '' ? description : description + ' - ' + location);
-
-          let tempDevice = {};
-          tempDevice.excluded = false;
-          tempDevice.serialNumber = serial;
-          tempDevice.softwareVersion = inverter.cpuVersion.replace(/-/g, '.');
-          tempDevice.model = inverter.model;
-          tempDevice.manufacturer = inverter.manufacturer;
-          tempDevice.siteid = data.site.id;
-          tempDevice.installationDate = data.site.installationDate;
-          tempDevice.description = name;
-          tempDevice.peakPower = data.site.peakPower * unitMultiplier;
-          tempDevice.powerflow = powerflow;
-          tempDevice.online = true;
-          tempDevice.eveHistory = this.config.options.eveHistory === true || this.config?.devices?.[serial]?.eveHistory === true;
-
-          devices[serial] = tempDevice;
+          devices[serial] = {
+            excluded: false,
+            serialNumber: serial,
+            softwareVersion: inverter.cpuVersion.replace(/-/g, '.'),
+            model: inverter.model,
+            manufacturer: inverter.manufacturer,
+            siteid: data.site.id,
+            installationDate: data.site.installationDate,
+            description: HomeKitDevice.makeHomeKitName(location === '' ? description : description + ' - ' + location),
+            peakPower: data.site.peakPower * unitMultiplier,
+            powerflow: powerflow,
+            online: true,
+            eveHistory: this.config.options.eveHistory === true || this.config?.devices?.[serial]?.eveHistory === true,
+          };
         });
     });
 
@@ -434,20 +431,6 @@ class SolarEdgeAccfactory {
 }
 
 // General helper functions which don't need to be part of an object class
-function makeHomeKitName(nameToMakeValid) {
-  // Strip invalid characters to meet HomeKit naming requirements
-  // Ensure only letters or numbers are at the beginning AND/OR end of string
-  // Matches against uni-code characters
-  let validHomeKitName = nameToMakeValid;
-  if (typeof nameToMakeValid === 'string') {
-    validHomeKitName = nameToMakeValid
-      .replace(/[^\p{L}\p{N}\p{Z}\u2019 '.,-]/gu, '') // Remove disallowed characters
-      .replace(/^[^\p{L}\p{N}]*/gu, '') // Trim invalid prefix
-      .replace(/[^\p{L}\p{N}]+$/gu, ''); // Trim invalid suffix
-  }
-  return validHomeKitName;
-}
-
 function scaleValue(value, sourceMin, sourceMax, targetMin, targetMax) {
   if (sourceMax === sourceMin) {
     return targetMin;

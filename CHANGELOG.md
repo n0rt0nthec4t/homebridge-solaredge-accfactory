@@ -8,6 +8,10 @@ All notable changes to `homebridge-solaredge-accfactory` will be documented in t
 - Currently uses v1 of the SolarEdge monitoring API
 - Only SolarEdge configured inverters are added (Need todo batteries)
 
+## v0.0.3 (2025/06/15)
+
+- Minor code cleanup and device object simplification.
+
 ## v0.0.2 (2025/06/14)
 
 - Internal code cleanup and structural improvements
