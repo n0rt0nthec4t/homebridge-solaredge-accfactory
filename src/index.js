@@ -17,7 +17,6 @@
 'use strict';
 
 // Define nodejs module requirements
-import EventEmitter from 'node:events';
 import { clearInterval, setTimeout } from 'node:timers';
 import crypto from 'node:crypto';
 
@@ -32,21 +31,31 @@ HomeKitDevice.HISTORY = HomeKitHistory;
 // Solar Inverter class
 class SolarInverter extends HomeKitDevice {
   static TYPE = 'SolarInverter';
-  static VERSION = '2025.06.15';
+  static VERSION = '2025.06.17'; // Code version
 
   batteryService = undefined;
   outletService = undefined;
   lightService = undefined;
 
-  constructor(accessory, api, log, eventEmitter, deviceData) {
-    super(accessory, api, log, eventEmitter, deviceData);
-  }
-
   // Class functions
-  setupDevice() {
+  onAdd() {
     // Setup the outlet service if not already present on the accessory
     this.outletService = this.addHKService(this.hap.Service.Outlet, '', 1);
     this.outletService.setPrimaryService();
+
+    // Setup set characteristics
+    this.addHKCharacteristic(this.outletService, this.hap.Characteristic.On, {
+      // eslint-disable-next-line no-unused-vars
+      onSet: (value) => {
+        // Reject manual changes and revert to current inverter state
+        setTimeout(() => {
+          this.outletService.updateCharacteristic(
+            this.hap.Characteristic.On,
+            this.deviceData?.powerflow?.PV?.currentPower !== 0 || this.deviceData?.powerflow?.PV?.status?.toUpperCase() === 'ACTIVE',
+          );
+        }, 100);
+      },
+    });
 
     // Setup battery service if not already present on the accessory
     this.batteryService = this.addHKService(this.hap.Service.Battery, '', 1);
@@ -74,7 +83,7 @@ class SolarInverter extends HomeKitDevice {
     }
   }
 
-  updateDevice(deviceData) {
+  onUpdate(deviceData) {
     if (typeof deviceData !== 'object' || this.outletService === undefined || this.batteryService === undefined) {
       return;
     }
@@ -166,7 +175,7 @@ class SolarInverter extends HomeKitDevice {
 }
 
 // SolarEdge class
-const SUBSCRIBEINTERVAL = 1000 * 60 * 10; // every 10minutes
+const SUBSCRIBE_INTERVAL = 1000 * 60 * 10; // every 10minutes
 
 class SolarEdgeAccfactory {
   cachedAccessories = []; // Track restored cached accessories
@@ -174,7 +183,6 @@ class SolarEdgeAccfactory {
   // Internal data only for this class
   #connections = {}; // Object of confirmed connections
   #rawData = {}; // Cached copy of data from Rest API
-  #eventEmitter = new EventEmitter(); // Used for object messaging from this platform
   #trackedDevices = {}; // Object of devices we've created. used to track comms uuid. key'd by serial #
 
   constructor(log, config, api) {
@@ -196,7 +204,7 @@ class SolarEdgeAccfactory {
 
     this.config.options.eveHistory = typeof this.config.options?.eveHistory === 'boolean' ? this.config.options.eveHistory : true;
 
-    this?.api?.on?.('didFinishLaunching', async () => {
+    api?.on?.('didFinishLaunching', async () => {
       // We got notified that Homebridge has finished loading, so we are ready to process
       // Start reconnect loop per connection with backoff for failed tries
       for (const uuid of Object.keys(this.#connections)) {
@@ -224,23 +232,20 @@ class SolarEdgeAccfactory {
       }
     });
 
-    this?.api?.on?.('shutdown', async () => {
+    api?.on?.('shutdown', async () => {
       // We got notified that Homebridge is shutting down
       // Perform cleanup of internal state
-      this.#eventEmitter?.removeAllListeners();
-
       Object.values(this.#trackedDevices).forEach((device) => {
         Object.values(device?.timers || {}).forEach((timer) => clearInterval(timer));
       });
 
       this.#trackedDevices = {};
       this.#rawData = {};
-      this.#eventEmitter = undefined;
     });
   }
 
   configureAccessory(accessory) {
-    // This gets called from HomeBridge each time it restores an accessory from its cache
+    // This gets called from Homebridge each time it restores an accessory from its cache
     this?.log?.info?.('Loading accessory from cache:', accessory.displayName);
 
     // add the restored accessory to the accessories cache, so we can track if it has already been registered
@@ -328,7 +333,7 @@ class SolarEdgeAccfactory {
       // Suppress site list fetch errors
     }
 
-    setTimeout(() => this.#subscribeREST(uuid), SUBSCRIBEINTERVAL);
+    setTimeout(() => this.#subscribeREST(uuid), SUBSCRIBE_INTERVAL);
   }
 
   #processPostSubscribe() {
@@ -354,7 +359,7 @@ class SolarEdgeAccfactory {
 
       if (this.#trackedDevices?.[deviceData?.serialNumber] === undefined && deviceData?.excluded === false) {
         // SolarEdge Inverter - Categories.OUTLET = 7
-        let tempDevice = new SolarInverter(this.cachedAccessories, this.api, this.log, this.#eventEmitter, deviceData);
+        let tempDevice = new SolarInverter(this.cachedAccessories, this.api, this.log, deviceData);
         tempDevice.add('SolarEdge Invertor', 7, true);
 
         // Track this device once created
@@ -367,8 +372,9 @@ class SolarEdgeAccfactory {
 
       // Finally, if device is not excluded, send updated data to device for it to process
       if (deviceData.excluded === false && this.#trackedDevices?.[deviceData?.serialNumber] !== undefined) {
-        this.#trackedDevices?.[deviceData?.serialNumber]?.uuid &&
-          this.#eventEmitter?.emit?.(this.#trackedDevices[deviceData.serialNumber].uuid, HomeKitDevice.UPDATE, deviceData);
+        if (this.#trackedDevices?.[deviceData?.serialNumber]?.uuid !== undefined) {
+          HomeKitDevice.message(this.#trackedDevices[deviceData.serialNumber].uuid, HomeKitDevice.UPDATE, deviceData);
+        }
       }
     });
   }
@@ -381,7 +387,6 @@ class SolarEdgeAccfactory {
     let devices = {};
 
     Object.values(this.#rawData).forEach((data) => {
-      // eslint-disable-next-line no-undef
       let powerflow = structuredClone(data.powerflow);
       let unitMultiplier = 1000;
 
@@ -417,7 +422,7 @@ class SolarEdgeAccfactory {
             manufacturer: inverter.manufacturer,
             siteid: data.site.id,
             installationDate: data.site.installationDate,
-            description: HomeKitDevice.makeHomeKitName(location === '' ? description : description + ' - ' + location),
+            description: HomeKitDevice.makeValidHKName(location === '' ? description : description + ' - ' + location),
             peakPower: data.site.peakPower * unitMultiplier,
             powerflow: powerflow,
             online: true,
@@ -505,6 +510,6 @@ async function fetchWrapper(method, url, options, data) {
 
 // Startup code
 export default (api) => {
-  // Register our platform with HomeBridge
+  // Register our platform with Homebridge
   api.registerPlatform(HomeKitDevice.PLATFORM_NAME, SolarEdgeAccfactory);
 };

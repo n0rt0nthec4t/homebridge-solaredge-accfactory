@@ -2,7 +2,7 @@
     "name": "homebridge-solaredge-accfactory",
     "displayName": "SolarEdge Accfactory",
     "type": "module",
-    "version": "0.0.3",
+    "version": "0.0.4",
     "description": "Homebridge support for SolarEdge Invertor(s)",
     "author": "n0rt0nthec4t",
     "license": "Apache-2.0",
@@ -26,7 +26,7 @@
     "main": "dist/index.js",
     "engines": {
         "node": "^20.17.0 || ^22.9.0",
-        "homebridge": "^1.8.0 || ^2.0.0-beta.0"
+        "homebridge": "^1.9.0 || ^2.0.0-beta.0"
     },
     "files": [
         "LICENSE",
@@ -37,8 +37,8 @@
     ],
     "scripts": {
         "clean": "rimraf ./dist*",
-        "format": "prettier --write src/*.js src/**/*.js",
-        "lint": "eslint src/*.js src/**/*.js --fix --max-warnings=20",
+        "format": "prettier --write \"src/**/*.{js,mjs}\"",
+        "lint": "eslint \"src/**/*.{js,mjs}\" --fix --max-warnings=20",
         "build": "npm run clean && copyfiles -u 1 src/*.js dist && copyfiles -u 2 src/HomeKitDevice/*.js dist && copyfiles -u 2 src/HomeKitHistory/*.js dist",
         "prepublishOnly": "npm run lint && npm run build"
     },
@@ -46,7 +46,7 @@
         "@eslint/js": "^9.29.0",
         "@stylistic/eslint-plugin": "^4.4.1",
         "@types/node": "^24.0.1",
-        "@typescript-eslint/parser": "^8.34.0",
+        "@typescript-eslint/parser": "^8.34.1",
         "homebridge": "^2.0.0-beta.0",
         "copyfiles": "^2.4.1",
         "eslint": "^9.29.0",
