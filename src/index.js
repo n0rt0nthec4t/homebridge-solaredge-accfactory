@@ -31,7 +31,7 @@ HomeKitDevice.HISTORY = HomeKitHistory;
 // Solar Inverter class
 class SolarInverter extends HomeKitDevice {
   static TYPE = 'SolarInverter';
-  static VERSION = '2025.06.17'; // Code version
+  static VERSION = '2025.07.22'; // Code version
 
   batteryService = undefined;
   outletService = undefined;
@@ -40,7 +40,7 @@ class SolarInverter extends HomeKitDevice {
   // Class functions
   onAdd() {
     // Setup the outlet service if not already present on the accessory
-    this.outletService = this.addHKService(this.hap.Service.Outlet, '', 1);
+    this.outletService = this.addHKService(this.hap.Service.Outlet, '', 1, { messages: this.message.bind(this) });
     this.outletService.setPrimaryService();
 
     // Setup set characteristics
@@ -69,18 +69,6 @@ class SolarInverter extends HomeKitDevice {
 
     this.addHKCharacteristic(this.lightService, this.hap.Characteristic.CurrentAmbientLightLevel);
     this.lightService.getCharacteristic(this.hap.Characteristic.CurrentAmbientLightLevel).displayName = 'Solar Generation';
-
-    // Setup linkage to EveHome app if configured todo so
-    if (
-      this.deviceData?.eveHistory === true &&
-      this.outletService !== undefined &&
-      typeof this.historyService?.linkToEveHome === 'function'
-    ) {
-      this.historyService.linkToEveHome(this.outletService, {
-        description: this.deviceData.description,
-        getcommand: this.#EveHomeGetcommand.bind(this),
-      });
-    }
   }
 
   onUpdate(deviceData) {
@@ -133,44 +121,39 @@ class SolarInverter extends HomeKitDevice {
     );
 
     // If we have the history service running and power output has changed to previous in past 2mins
-    if (this.outletService !== undefined && typeof this.historyService?.addHistory === 'function') {
-      this.historyService.addHistory(
-        this.outletService,
-        {
-          time: Math.floor(Date.now() / 1000),
-          status: (deviceData.powerflow.PV.currentPower !== 0 || deviceData.powerflow.PV.status.toUpperCase() === 'ACTIVE' ? true : false)
-            ? 1
-            : 0,
-          volts: 0,
-          watts: deviceData.powerflow.PV.currentPower,
-          amps: 0,
-        },
-        120,
-      );
-    }
+    this.history(
+      this.outletService,
+      {
+        time: Math.floor(Date.now() / 1000),
+        status: (deviceData.powerflow.PV.currentPower !== 0 || deviceData.powerflow.PV.status.toUpperCase() === 'ACTIVE' ? true : false)
+          ? 1
+          : 0,
+        volts: 0,
+        watts: deviceData.powerflow.PV.currentPower,
+        amps: 0,
+      },
+      120,
+    );
 
-    // Notify Eve App of device status changes if linked
-    if (
-      this.deviceData.eveHistory === true &&
-      this.outletService !== undefined &&
-      typeof this.historyService?.updateEveHome === 'function'
-    ) {
-      // Update our internal data with properties Eve will need to process
-      this.deviceData.powerflow.PV.currentPower = deviceData.powerflow.PV.currentPower;
-      this.historyService.updateEveHome(this.outletService, this.#EveHomeGetcommand.bind(this));
-    }
+    // Update our internal data with properties Eve will need to process then Notify Eve App of device status changes if linked
+    this.deviceData.powerflow.PV.currentPower = deviceData.powerflow.PV.currentPower;
+    this.historyService?.updateEveHome?.(this.outletService);
   }
 
-  #EveHomeGetcommand(EveHomeGetData) {
-    // Pass back extra data for Eve Energy onGet() to process command
-    // Data will already be an object, our only job is to add/modify it
-    if (typeof EveHomeGetData === 'object') {
-      EveHomeGetData.volts = 0;
-      EveHomeGetData.watts = this.deviceData.powerflow.PV.currentPower;
-      EveHomeGetData.amps = 0;
+  onMessage(type, message) {
+    if (typeof type !== 'string' || type === '' || message === null || typeof message !== 'object' || message?.constructor !== Object) {
+      return;
     }
 
-    return EveHomeGetData;
+    if (type === HomeKitDevice?.HISTORY?.GET) {
+      // Pass back extra data for Eve Energy onGet() to process command
+      // Data will already be an object, our only job is to add/modify it
+      message.volts = 0;
+      message.watts = this.deviceData.powerflow.PV.currentPower;
+      message.amps = 0;
+
+      return message;
+    }
   }
 }
 
