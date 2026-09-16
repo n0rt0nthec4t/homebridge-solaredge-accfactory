@@ -1,44 +1,85 @@
 {
-    "pluginAlias": "SolarEdgeAccfactory",
-    "pluginType": "platform",
-    "singular": true,
-    "schema": {
-        "type" : "object",
-        "properties" : {
-            "name": {
-                "title": "Name",
-                "type": "string",
-                "default": "SolarEdgeAccfactory",
-                "condition": "1=2"
+  "pluginAlias": "SolarEdgeAccfactory",
+  "pluginType": "platform",
+  "singular": true,
+  "schema": {
+    "type": "object",
+    "properties": {
+      "name": {
+        "title": "Name",
+        "type": "string",
+        "default": "SolarEdgeAccfactory",
+        "condition": "1=2"
+      },
+      "solaredge": {
+        "title": "SolarEdge",
+        "type": "object",
+        "properties": {
+          "apiKey": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Monitoring API Key",
+            "placeholder": "Enter your SolarEdge Monitoring API key"
+          }
+        },
+        "required": ["apiKey"]
+      },
+      "devices": {
+        "type": "object",
+        "additionalProperties": {
+          "title": "Inverter Override",
+          "type": "object",
+          "properties": {
+            "exclude": {
+              "type": "boolean",
+              "default": false
             },
-            "solaredge": {
-                "title": "SolarEdge",
-                "type": "object",
-                "expandable": true,
-                "expanded": true,
-                "properties": {
-                    "apiKey": {
-                        "type": "string",
-                        "title": "API Key",
-                        "placeholder": "Enter your SolarEdge API Key (v1 API)",
-                        "required": true
-                    }
-                }
-            },
-            "options": {
-                "title": "Options",
-                "type": "object",
-                "expandable": true,
-                "expanded": true,
-                "properties": {
-                    "eveHistory": {
-                        "title": "EveHome History",
-                        "description": "Provide history in EveHome application where applicable",
-                        "type": "boolean",
-                        "default": true
-                    }
-                }
+            "eveHistory": {
+              "type": "boolean"
             }
+          },
+          "additionalProperties": false
         }
+      },
+      "options": {
+        "type": "object",
+        "properties": {
+          "eveHistory": {
+            "type": "boolean",
+            "default": true
+          }
+        }
+      }
+    },
+    "required": ["solaredge"]
+  },
+  "layout": [
+    {
+      "type": "fieldset",
+      "title": "SolarEdge Monitoring API",
+      "description": "Enter an API key with access to the SolarEdge sites that Homebridge should monitor.",
+      "expandable": true,
+      "expanded": true,
+      "items": [
+        {
+          "key": "solaredge.apiKey",
+          "title": "API Key"
+        }
+      ]
+    },
+    {
+      "type": "fieldset",
+      "title": "Options",
+      "expandable": true,
+      "expanded": false,
+      "items": [
+        {
+          "key": "options.eveHistory",
+          "title": "Eve Energy History",
+          "description": "Record solar generation, voltage, and current for supported Eve applications."
+        }
+      ]
     }
+  ]
 }

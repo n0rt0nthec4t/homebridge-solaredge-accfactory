@@ -2,8 +2,8 @@
     "name": "homebridge-solaredge-accfactory",
     "displayName": "SolarEdge Accfactory",
     "type": "module",
-    "version": "0.0.5",
-    "description": "Homebridge support for SolarEdge Invertor(s)",
+    "version": "0.0.6",
+    "description": "SolarEdge inverter support for Homebridge",
     "author": "n0rt0nthec4t",
     "license": "Apache-2.0",
     "homepage": "https://github.com/n0rt0nthec4t/homebridge-solaredge-accfactory/#readme",
@@ -19,14 +19,16 @@
         "homekit",
         "homebridge-plugin",
         "homebridge",
+        "apple home",
+        "supports-hap",
         "solaredge",
         "energy",
         "solar"
     ],
     "main": "dist/index.js",
     "engines": {
-        "node": "^20.19.0 || ^22.12.0 || ^24.0.0",
-        "homebridge": "^1.8.0 || ^2.0.0-beta.0"
+        "node": "^22 || ^24 || ^26",
+        "homebridge": "^1.11.4 || ^2.4.0"
     },
     "files": [
         "LICENSE",
@@ -36,24 +38,24 @@
         "CHANGELOG.md"
     ],
     "scripts": {
-        "clean": "rimraf ./dist*",
-        "format": "prettier --write \"src/**/*.{js,mjs}\"",
-        "lint": "eslint \"src/**/*.{js,mjs}\" --fix --max-warnings=20",
-        "build": "npm run clean && copyfiles -u 1 src/*.js dist && copyfiles -u 2 src/HomeKitDevice/*.js dist && copyfiles -u 2 src/HomeKitHistory/*.js dist",
-        "prepublishOnly": "npm run lint && npm run build"
+        "clean": "rimraf dist",
+        "format": "prettier --write \"src/*.{js,mjs}\" \"test/**/*.{js,mjs}\" && eslint --fix \"src/*.{js,mjs}\" \"test/**/*.js\"",
+        "lint": "eslint \"src/*.{js,mjs}\" \"test/**/*.js\" --max-warnings=20",
+        "test": "npm run build && node --test test/*.test.js",
+        "test:coverage": "npm run build && node --test --experimental-test-coverage test/*.test.js",
+        "check": "npm run lint && npm test && npm run build",
+        "build": "npm run clean && copyfiles -u 1 src/*.js dist && copyfiles -u 2 src/HomeKitDevice/HomeKitDevice.js dist && copyfiles -u 2 src/HomeKitHistory/HomeKitHistory.js dist",
+        "prepublishOnly": "npm run format && npm run lint && npm test && npm run build"
     },
     "devDependencies": {
-        "@eslint/js": "^9.31.0",
-        "eslint": "^9.31.0",
-        "@stylistic/eslint-plugin": "^5.2.0",
-        "@types/node": "^24.0.15",
-        "@typescript-eslint/parser": "^8.37.0",
-        "prettier": "^3.6.2",
-        "prettier-eslint": "^16.4.2",
+        "@homebridge/hap-nodejs": "^2.2.3",
+        "@stylistic/eslint-plugin": "^5.10.0",
+        "@types/node": "^26.5.1",
+        "@typescript-eslint/parser": "^8.70.0",
         "copyfiles": "^2.4.1",
-        "rimraf": "^6.0.1",
-        "homebridge": "^2.0.0-beta.0"
-    },
-    "dependencies": {
+        "eslint": "^10.10.0",
+        "homebridge": "^1.11.4 || ^2.4.0",
+        "prettier": "^3.9.6",
+        "rimraf": "^6.1.3"
     }
 }

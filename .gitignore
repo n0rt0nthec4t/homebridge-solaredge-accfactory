@@ -1,7 +1,10 @@
 persist
-node_modules
+node_modules*
+non-github
 dist*
 .vscode
+# macOS junk
 .DS_Store
+**/.DS_Store
 .git
 *.code-workspace
