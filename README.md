@@ -9,6 +9,8 @@
 
 </span>
 
+> **Project discontinued:** This plugin relies on the retired SolarEdge Monitoring API v1 and no longer works. Requests to the old API return HTTP 410 (Gone). SolarEdge API v2 is not supported, and no further development is planned. The documentation below is retained for reference.
+
 A dynamic Homebridge platform for solar inverters discovered through the [SolarEdge Monitoring API](https://knowledge-center.solaredge.com/sites/kc/files/se_monitoring_api.pdf).
 
 ## Features
